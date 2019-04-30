@@ -281,6 +281,8 @@ namespace global {
 
     // statistics
     std::ofstream robot_file, ctrl_file, iter_file, misc_file;
+    std::vector<int> blocked_legs;
+    double floorFrictionCoeff = 1.0;
 }
 
 // Stat GP
@@ -816,6 +818,18 @@ void execute(const Eigen::VectorXd& desc, double t, bool stat = true)
     std::vector<double> d(desc.size(), 0.0);
     Eigen::VectorXd::Map(d.data(), d.size()) = desc;
     std::vector<double> ctrl = Params::archiveparams::archive[d].controller;
+    for (size_t i=0; i<global::blocked_legs.size(); i++)
+    {
+        //disable first joint
+        ctrl[6*global::blocked_legs[i]] = 0;   
+        ctrl[6*global::blocked_legs[i]+1] = 0;   
+        ctrl[6*global::blocked_legs[i]+2] = 0;  
+        
+        //disable 2nd joint
+        ctrl[6*global::blocked_legs[i]+3] = 0;   
+        ctrl[6*global::blocked_legs[i]+4] = 0;   
+        ctrl[6*global::blocked_legs[i]+5] = 0;   
+    }
 
     if (stat) {
         // statistics - descriptor
@@ -833,6 +847,12 @@ void execute(const Eigen::VectorXd& desc, double t, bool stat = true)
 
     // Run the controller
     global::simu->controller().set_parameters(ctrl);
+    
+    //Adjust floor friction
+    auto floor_skel = global::simu->world()->getSkeleton("floor");
+    auto floor_nodes = floor_skel->getBodyNodes();
+    floor_nodes[0]->setFrictionCoeff(global::floorFrictionCoeff);
+
     global::simu->run(t, true, true);
 
     // If the robot tries to fall or collides
@@ -1247,7 +1267,8 @@ std::tuple<std::vector<Eigen::Vector3d>, Eigen::Vector3d> init_map(const std::st
     N = 10;
 #endif
     std::vector<Eigen::Vector3d> g = generate_targets(Eigen::Vector2d(i_x, i_y), Eigen::Vector2d((r - 1) * Params::cell_size(), (c - 1) * Params::cell_size()), (Eigen::Vector2d(i_x, i_y) - Eigen::Vector2d(goals[1](0), goals[1](1))).norm(), N);
-
+    // g[0][0] = 1.15;
+    // g[0][1] = 3.5;
     return std::make_tuple(g, Eigen::Vector3d(i_x, i_y, i_th));
 }
 
@@ -1411,7 +1432,23 @@ int main(int argc, char** argv)
 
     namespace po = boost::program_options;
     po::options_description desc("Command line arguments");
-    desc.add_options()("help,h", "Prints this help message")("archive,m", po::value<std::string>()->required(), "Archive file")("load,l", po::value<std::string>()->required(), "Load map from file")("uct,c", po::value<double>(), "UCT c value (in range (0,+00))")("spw,a", po::value<double>(), "SPW a value (in range (0,1))")("dpw,b", po::value<double>(), "DPW b value (in range (0,1))")("iter,i", po::value<size_t>(), "Number of iteartions to run MCTS")("remove_legs,r", po::value<std::vector<int>>()->multitoken(), "Specify which legs to remove")("shorten_legs,s", po::value<std::vector<int>>()->multitoken(), "Specify which legs to shorten")("parallel_roots,p", po::value<size_t>(), "Number of parallel trees in MCTS")("active_learning,k", po::value<double>(), "Active Learning k parameter")("signal_variance,v", po::value<double>(), "Initial signal variance in kernel (squared)")("kernel_scale,d", po::value<double>(), "Characteristic length scale in kernel")("replay_exp,e", po::value<std::string>(), "Folder of experiment to replay")("no_learning,n", po::bool_switch(&no_learning), "Do not learn anything");
+    desc.add_options()("help,h", "Prints this help message")
+                      ("archive,m", po::value<std::string>()->required(), "Archive file")
+                      ("load,l", po::value<std::string>()->required(), "Load map from file")
+                      ("uct,c", po::value<double>(), "UCT c value (in range (0,+00))")
+                      ("spw,a", po::value<double>(), "SPW a value (in range (0,1))")
+                      ("dpw,b", po::value<double>(), "DPW b value (in range (0,1))")
+                      ("iter,i", po::value<size_t>(), "Number of iteartions to run MCTS")
+                      ("remove_legs,r", po::value<std::vector<int>>()->multitoken(), "Specify which legs to remove")
+                      ("shorten_legs,s", po::value<std::vector<int>>()->multitoken(), "Specify which legs to shorten")
+                      ("block_legs,x", po::value<std::vector<int>>()->multitoken(), "Specify which legs to block")
+                      ("parallel_roots,p", po::value<size_t>(), "Number of parallel trees in MCTS")
+                      ("active_learning,k", po::value<double>(), "Active Learning k parameter")
+                      ("signal_variance,v", po::value<double>(), "Initial signal variance in kernel (squared)")
+                      ("kernel_scale,d", po::value<double>(), "Characteristic length scale in kernel")
+                      ("replay_exp,e", po::value<std::string>(), "Folder of experiment to replay")
+                      ("friction_coeff,f", po::value<double>(), "Floor's friction coeff. Default 1.0")
+                      ("no_learning,n", po::bool_switch(&no_learning), "Do not learn anything");
 
     try {
         po::variables_map vm;
@@ -1462,6 +1499,16 @@ int main(int argc, char** argv)
                 dmg.type = "leg_shortening";
                 dmg.data = std::to_string(shortened_legs[i]);
                 global::damages.push_back(dmg);
+            }
+        }
+        if (vm.count("block_legs")) {
+            auto blocked_legs = vm["block_legs"].as<std::vector<int>>();
+            for(size_t i=0; i<blocked_legs.size(); i++)
+            {
+                if (int(blocked_legs[i]) < 6 && int(blocked_legs[i]) >= 0)
+                    global::blocked_legs.push_back(int(blocked_legs[i]));
+                else
+                    std::cout<<"Blocked leg parameter not accepted: "<<blocked_legs[i]<<std::endl;
             }
         }
         if (vm.count("uct")) {
@@ -1533,6 +1580,15 @@ int main(int argc, char** argv)
         }
         else {
             Params::kernel_exp::set_l(0.5);
+        }
+        if (vm.count("friction_coeff")) {
+            double c = vm["friction_coeff"].as<double>();
+            if (c < 0.0)
+                c = 0.0;
+            global::floorFrictionCoeff = c;
+        }
+        else {
+            global::floorFrictionCoeff = 1.0;
         }
     }
     catch (po::error& e) {
