@@ -21,3 +21,9 @@ benchmark_results
 # Ignored folders for the documentation
 _build
 doxygen_doc
+.vscode/ipch/f1f6c6fb81b02c15/mmap_address.bin
+.vscode/ipch/f1f6c6fb81b02c15/rte_hexa.ipch
+*.dat
+*.waf3*
+*.svg
+*.vscode*
