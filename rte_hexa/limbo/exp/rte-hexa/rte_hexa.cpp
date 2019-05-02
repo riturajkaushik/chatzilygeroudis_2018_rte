@@ -283,6 +283,7 @@ namespace global {
     std::ofstream robot_file, ctrl_file, iter_file, misc_file;
     std::vector<int> blocked_legs;
     double floorFrictionCoeff = 1.0;
+    std::vector<double> custom_goal;
 }
 
 // Stat GP
@@ -1263,12 +1264,18 @@ std::tuple<std::vector<Eigen::Vector3d>, Eigen::Vector3d> init_map(const std::st
     }
 
     size_t N = 50;
+    if (global::custom_goal.size()>0)
+        N = 1;
+    
 #ifdef ROBOT
     N = 10;
 #endif
     std::vector<Eigen::Vector3d> g = generate_targets(Eigen::Vector2d(i_x, i_y), Eigen::Vector2d((r - 1) * Params::cell_size(), (c - 1) * Params::cell_size()), (Eigen::Vector2d(i_x, i_y) - Eigen::Vector2d(goals[1](0), goals[1](1))).norm(), N);
-    // g[0][0] = 1.15;
-    // g[0][1] = 3.5;
+    if (global::custom_goal.size()>0)
+    {
+        g[0][0] = global::custom_goal[0];
+        g[0][1] = global::custom_goal[1];
+    }
     return std::make_tuple(g, Eigen::Vector3d(i_x, i_y, i_th));
 }
 
@@ -1442,6 +1449,7 @@ int main(int argc, char** argv)
                       ("remove_legs,r", po::value<std::vector<int>>()->multitoken(), "Specify which legs to remove")
                       ("shorten_legs,s", po::value<std::vector<int>>()->multitoken(), "Specify which legs to shorten")
                       ("block_legs,x", po::value<std::vector<int>>()->multitoken(), "Specify which legs to block")
+                      ("custom_goal,g", po::value<std::vector<double>>()->multitoken(), "Specify goal")
                       ("parallel_roots,p", po::value<size_t>(), "Number of parallel trees in MCTS")
                       ("active_learning,k", po::value<double>(), "Active Learning k parameter")
                       ("signal_variance,v", po::value<double>(), "Initial signal variance in kernel (squared)")
@@ -1510,6 +1518,9 @@ int main(int argc, char** argv)
                 else
                     std::cout<<"Blocked leg parameter not accepted: "<<blocked_legs[i]<<std::endl;
             }
+        }
+        if (vm.count("custom_goal")) {
+            global::custom_goal = vm["custom_goal"].as<std::vector<double>>();
         }
         if (vm.count("uct")) {
             double c = vm["uct"].as<double>();
