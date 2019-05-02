@@ -832,10 +832,17 @@ void execute(const Eigen::VectorXd& desc, double t, bool stat = true)
         ctrl[6*global::blocked_legs[i]+5] = 0;   
     }
 
+    // if (stat) {
+    //     // statistics - descriptor
+    //     for (int i = 0; i < desc.size(); i++)
+    //         global::ctrl_file << desc(i) << " ";
+    //     global::ctrl_file << std::endl;
+    // }
+
     if (stat) {
-        // statistics - descriptor
-        for (int i = 0; i < desc.size(); i++)
-            global::ctrl_file << desc(i) << " ";
+        // statistics - controller
+        for (int i = 0; i < ctrl.size(); i++)
+            global::ctrl_file << ctrl[i] << " ";
         global::ctrl_file << std::endl;
     }
 
@@ -848,7 +855,7 @@ void execute(const Eigen::VectorXd& desc, double t, bool stat = true)
 
     // Run the controller
     global::simu->controller().set_parameters(ctrl);
-    
+
     //Adjust floor friction
     auto floor_skel = global::simu->world()->getSkeleton("floor");
     auto floor_nodes = floor_skel->getBodyNodes();
